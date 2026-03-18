@@ -2,72 +2,66 @@ const { Command } = require('commander');
 const fs = require('fs');
 const program = new Command();
 
-// Налаштування виводу помилок через configureOutput для Варіанту 7
-program.configureOutput({
-  outputError: (str, write) => {
-    // Перехоплюємо помилку лише для обов'язкового параметра -i
-    if (str.includes("-i") || str.includes("--input")) {
-      write("Please, specify input file\n");
-    } else {
-      write(str);
-    }
-  }
-});
-
-// Налаштування параметрів командного рядка
+// Налаштування програми згідно з твоїм зразком
 program
-  .requiredOption('-i, --input <path>', 'шлях до файлу для читання (обов’язковий)')
+  .exitOverride() // Дозволяє перехоплювати помилки в try-catch
+  .configureOutput({
+    writeErr: () => {}, // Приховуємо стандартний вивід помилок
+    writeOut: () => {}  // Приховуємо стандартний вивід повідомлень
+  })
+  .requiredOption('-i, --input <path>', 'шлях до файлу для читання')
   .option('-o, --output <path>', 'шлях до файлу для запису результату')
   .option('-d, --display', 'вивести результат у консоль')
   .option('-h, --humidity', 'відображати вологість вдень (Humidity3pm)')
   .option('-r, --rainfall <number>', 'фільтрувати за кількістю опадів (Rainfall)');
 
-program.parse(process.argv);
+// Перехоплення помилок парсингу (наприклад, відсутність -i)
+try {
+  program.parse(process.argv);
+} catch (err) {
+  // Якщо параметр -i не вказано, виводимо саме цей текст
+  console.error("Please, specify input file");
+  process.exit(1);
+}
+
 const options = program.opts();
 
-// Перевірка фізичної наявності вхідного файлу
+// Перевірка наявності файлу на диску
 if (!fs.existsSync(options.input)) {
   console.error("Cannot find input file");
   process.exit(1);
 }
 
 try {
-  // Читання та парсинг даних
+  // Читання та парсинг даних про погоду
   const rawData = fs.readFileSync(options.input, 'utf8');
   let data = JSON.parse(rawData);
 
-  // Фільтрація за опадами (Rainfall)
+  // Логіка Варіанту 7: фільтрація за опадами (Rainfall)
   if (options.rainfall) {
     const minRain = parseFloat(options.rainfall);
     data = data.filter(item => parseFloat(item.Rainfall) > minRain);
   }
 
-  // Формування вихідних даних: Rainfall Pressure3pm [Humidity3pm]
-  const result = data.map(item => {
+  // Формування результату: Rainfall Pressure3pm [Humidity3pm]
+  const resultLines = data.map(item => {
     let line = `${item.Rainfall} ${item.Pressure3pm}`;
     if (options.humidity) {
       line += ` ${item.Humidity3pm}`;
     }
     return line;
-  }).join('\n');
+  });
 
-  // Вивід у консоль
+  const finalResult = resultLines.join('\n');
+
+  // Вивід у консоль за запитом (-d)
   if (options.display) {
-    if (result) {
-      console.log(result);
-    } else {
-      console.log("Нічого не знайдено за заданими фільтрами.");
-    }
+    console.log(finalResult || "Нічого не знайдено за заданими фільтрами.");
   }
 
-  // Запис у файл
+  // Запис у файл за запитом (-o)
   if (options.output) {
-    if (result) {
-      fs.writeFileSync(options.output, result, 'utf8');
-      console.log(`Успіх! Результат записано у файл: ${options.output}`);
-    } else {
-      console.log("Результат порожній, файл не було створено.");
-    }
+    fs.writeFileSync(options.output, finalResult || "", 'utf8');
   }
 
 } catch (err) {
